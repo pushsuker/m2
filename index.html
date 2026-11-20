@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>หลักการทำงานของระบบคอมพิวเตอร์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a "circuit board" app shell — sticky tab bar, one view at a time, data flowing between five unit nodes */
+:root {
+  --bg: #F3F7FE; --surface: #FFFFFF; --surface-2: #EDF3FD; --line: #D6E1F3;
+  --fg: #1B2A4A; --muted: #4B5D80; --accent: #1C7FE0; --accent-2: #18B5C9;
+  --good: #1F9254; --bad: #D93C5B; --on-accent: #FFFFFF;
+  --u-in: #1C7FE0; --u-cpu: #7353E6; --u-out: #E07A00; --u-ram: #1F9254; --u-sto: #D6407E;
+  --shadow: 0 1px 2px rgba(27, 42, 74, .05), 0 6px 18px rgba(28, 127, 224, .08);
+  --glow: radial-gradient(1200px 520px at 15% -10%, #DCEBFF 0%, transparent 60%), radial-gradient(900px 480px at 100% 0%, #DDF7F6 0%, transparent 55%);
+  color-scheme: light;
+  --font-display: "Prompt", "Noto Sans Thai", "Leelawadee UI", sans-serif;
+  --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", "Leelawadee UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --radius: 16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #172340; --surface: #1F2D50; --surface-2: #283A63; --line: #344B7C;
+  --fg: #EEF3FC; --muted: #B5C3E0; --accent: #5DC6FF; --accent-2: #7E9BFF;
+  --good: #5ED69B; --bad: #FF8197; --on-accent: #0C1A36;
+  --u-in: #5DC6FF; --u-cpu: #A898FF; --u-out: #FFBE5C; --u-ram: #5ED69B; --u-sto: #FF94C4;
+  --shadow: 0 4px 16px rgba(0, 0, 0, .18);
+  --glow: radial-gradient(1200px 520px at 15% -10%, #22356A 0%, transparent 60%), radial-gradient(900px 480px at 100% 0%, #1D3D55 0%, transparent 55%);
+  color-scheme: dark; } }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] {
+  --bg: #172340; --surface: #1F2D50; --surface-2: #283A63; --line: #344B7C;
+  --fg: #EEF3FC; --muted: #B5C3E0; --accent: #5DC6FF; --accent-2: #7E9BFF;
+  --good: #5ED69B; --bad: #FF8197; --on-accent: #0C1A36;
+  --u-in: #5DC6FF; --u-cpu: #A898FF; --u-out: #FFBE5C; --u-ram: #5ED69B; --u-sto: #FF94C4;
+  --shadow: 0 4px 16px rgba(0, 0, 0, .18);
+  --glow: radial-gradient(1200px 520px at 15% -10%, #22356A 0%, transparent 60%), radial-gradient(900px 480px at 100% 0%, #1D3D55 0%, transparent 55%);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 17px/1.75 var(--font-body);
+  background-image: var(--glow); background-attachment: fixed;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.3; text-wrap: balance; margin: 0; }
+p { margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.mono { font-family: var(--font-mono); letter-spacing: .04em; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1120px; margin: 0 auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.chip-logo { width: 34px; height: 34px; flex: none; }
+.brand b { font-family: var(--font-display); font-size: 17px; display: block; line-height: 1.2; }
+.brand small { color: var(--muted); font-size: 12.5px; }
+nav.tabs { display: flex; gap: 4px; margin-left: auto; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+nav.tabs a {
+  text-decoration: none; color: var(--muted); font-weight: 500; font-size: 15px; white-space: nowrap;
+  padding: 7px 14px; border-radius: 999px; border: 1px solid transparent; transition: background .2s, color .2s;
+}
+nav.tabs a:hover { color: var(--fg); background: var(--surface-2); }
+.theme-btn { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; display: grid; place-items: center; font-size: 18px; line-height: 1; }
+.theme-btn:hover { border-color: var(--accent); }
+nav.tabs a[aria-current="page"] { color: var(--on-accent); background: var(--accent); font-weight: 600; }
+
+main {
+  max-width: 1120px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.view { display: grid; gap: 28px; }
+.view[hidden] { display: none; }
+.eyebrow { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.section-head { display: grid; gap: 6px; }
+.section-head h2 { font-size: clamp(24px, 3.4vw, 32px); }
+.section-head p { color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; min-width: 0; box-shadow: var(--shadow); }
+.btn {
+  text-decoration: none; color: inherit; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; border: 1px solid var(--line);
+  background: var(--surface-2); padding: 9px 18px; border-radius: 10px; font-weight: 600;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--accent-2))); color: var(--on-accent); border-color: transparent; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent); }
+.unit-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* ---------- home ---------- */
+.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 28px; align-items: center; }
+.hero h1 { font-size: clamp(30px, 5vw, 50px); }
+.hero h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero .lead { color: var(--muted); font-size: 17px; max-width: 52ch; margin-top: 12px; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.board { position: relative; min-width: 0; }
+.board svg { width: 100%; height: auto; display: block; }
+.flowline { stroke-dasharray: 6 8; animation: flow 1.4s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -28; } }
+.think { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; }
+.think .q { font-family: var(--font-display); font-size: 19px; }
+.think .badge { font-family: var(--font-mono); font-size: 12px; color: var(--accent); border: 1px solid var(--accent); padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.answer { margin-top: 8px; color: var(--good); font-weight: 600; }
+.cards4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.entry { text-decoration: none; color: inherit; display: grid; gap: 8px; align-content: start; transition: border-color .2s, transform .2s; }
+.entry:hover { border-color: var(--accent); transform: translateY(-3px); }
+.entry:nth-child(1) { --c: var(--u-in); } .entry:nth-child(2) { --c: var(--u-cpu); } .entry:nth-child(3) { --c: var(--u-out); } .entry:nth-child(4) { --c: var(--u-ram); }
+.entry { border-top: 4px solid var(--c); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 9%, var(--surface)), var(--surface) 70%); }
+.entry .num { font-family: var(--font-mono); font-size: 12.5px; color: var(--c); font-weight: 600; }
+.entry h3 { font-size: 19px; }
+.entry p { color: var(--muted); font-size: 15.5px; }
+
+/* ---------- theory ---------- */
+.units { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 14px; }
+.unit-card { border-top: 5px solid var(--c); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 8%, var(--surface)), var(--surface) 65%); display: grid; gap: 8px; align-content: start; }
+.unit-card h3 { font-size: 18px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.unit-card h3 small { font-family: var(--font-mono); font-size: 12px; color: var(--c); font-weight: 500; }
+.unit-card p { color: var(--muted); font-size: 16px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 14px; padding: 2px 12px; border-radius: 999px; background: color-mix(in srgb, var(--c, var(--accent)) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 30%, var(--line)); }
+.cycle { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; counter-reset: s; }
+.step { position: relative; padding: 18px 18px 18px 18px; border: 1px solid var(--line); background: var(--surface); display: grid; gap: 6px; align-content: start; }
+.step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.step + .step { border-left: none; }
+.step .n { font-family: var(--font-mono); font-size: 13px; color: var(--c, var(--accent)); font-weight: 600; }
+.step { border-top: 4px solid var(--c, var(--accent)); }
+.step:nth-child(1) { --c: var(--u-in); } .step:nth-child(2) { --c: var(--u-cpu); } .step:nth-child(3) { --c: var(--u-ram); } .step:nth-child(4) { --c: var(--u-out); }
+.step h3 { font-size: 18px; }
+.step p { color: var(--muted); font-size: 15.5px; }
+.step:not(:last-child)::after {
+  content: "→"; position: absolute; right: -14px; top: 18px; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font-weight: 700; z-index: 1; font-size: 14px;
+}
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-display); font-weight: 600; color: var(--muted); font-size: 14px; }
+.yes { color: var(--good); font-weight: 600; } .no { color: var(--bad); font-weight: 600; }
+.mcycle { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.mcycle span { font-family: var(--font-mono); font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px dashed var(--u-cpu); color: var(--u-cpu); }
+details { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { color: var(--muted); margin-top: 8px; }
+.components5 { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.components5 span { padding: 6px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 500; }
+
+/* ---------- highlights ---------- */
+.hl { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: start; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filter { cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 14px; display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; }
+.filter[aria-pressed="true"] { border-color: var(--c, var(--accent)); background: color-mix(in srgb, var(--c, var(--accent)) 18%, var(--surface)); font-weight: 600; }
+.scene svg { width: 100%; height: auto; display: block; }
+.dev { cursor: pointer; transition: opacity .25s; }
+.dev .shape { fill: var(--surface-2); stroke: var(--line); stroke-width: 2; transition: stroke .2s, fill .2s; }
+.dev .lbl { fill: var(--muted); font: 600 13px var(--font-body); }
+.dev:hover .shape, .dev:focus .shape { stroke: var(--accent); }
+.dev.on .shape { stroke: var(--c); stroke-width: 3; fill: color-mix(in srgb, var(--c) 22%, var(--surface-2)); }
+.dev.on .lbl { fill: var(--fg); }
+.scene.filtering .dev:not(.on) { opacity: .28; }
+.dev:focus { outline: none; }
+.info { display: grid; gap: 10px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 80px); }
+.info .unitname { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; color: var(--c); }
+.info h3 { font-size: 22px; }
+.info p { color: var(--muted); font-size: 16.5px; }
+.info .hint { font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* ---------- simulator ---------- */
+.sim-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.meter { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 220px; }
+.bar { flex: 1; height: 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .4s; }
+.tray { display: flex; flex-wrap: wrap; gap: 10px; min-height: 58px; padding: 14px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface); }
+.tray:empty::after { content: "ครบทุกบัตรคำแล้ว"; color: var(--good); font-weight: 600; }
+.card {
+  font-size: 16px; cursor: grab; user-select: none; touch-action: none; padding: 8px 16px; border-radius: 10px; font-weight: 600;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: 0 2px 0 var(--line), var(--shadow); transition: transform .15s, border-color .15s;
+}
+.card:hover { border-color: var(--accent); }
+.card.selected { border-color: var(--accent); outline: 2px solid var(--accent); }
+.card.placed { cursor: default; box-shadow: none; border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, var(--surface)); }
+.card.shake { animation: shake .4s; border-color: var(--bad); }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+.ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -50%) rotate(-3deg); box-shadow: 0 10px 24px rgba(0,0,0,.25); }
+.zones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.zone { border: 2px solid color-mix(in srgb, var(--c, var(--line)) 35%, var(--line)); box-shadow: var(--shadow); border-radius: var(--radius); background: var(--surface); padding: 14px; display: grid; gap: 10px; align-content: start; min-height: 150px; transition: border-color .2s, background .2s; cursor: pointer; }
+.zone header { display: flex; align-items: center; gap: 8px; }
+.zone header b { font-family: var(--font-display); font-size: 17px; color: var(--c, var(--fg)); }
+.zone header small { margin-left: auto; font-family: var(--font-mono); color: var(--muted); font-size: 12px; }
+.zone .slot { display: flex; flex-wrap: wrap; gap: 8px; }
+.zone.over { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
+.zone.wide { grid-column: span 3; }
+.storage { grid-column: span 3; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; border: 1px dashed var(--line); border-radius: calc(var(--radius) + 4px); padding: 12px; }
+.storage > .cap { grid-column: span 2; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); letter-spacing: .08em; }
+.toast { min-height: 28px; font-weight: 600; }
+.sim-area { display: grid; gap: 18px; }
+.sim-area[hidden] { display: none; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mode-btn { cursor: pointer; text-align: left; display: grid; gap: 2px; padding: 14px 18px; border-radius: var(--radius); border: 2px solid var(--line); background: var(--surface); box-shadow: var(--shadow); }
+.mode-btn b { font-family: var(--font-display); font-size: 18px; }
+.mode-btn small { color: var(--muted); font-size: 14.5px; }
+.mode-btn:hover { border-color: var(--accent); }
+.mode-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.mode-btn[aria-pressed="true"] b { color: var(--accent); }
+.work-start { display: grid; gap: 14px; max-width: 760px; }
+.work-start[hidden] { display: none; }
+.work-start h3 { font-size: 20px; }
+.fields { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+.fields label { display: grid; gap: 4px; font-weight: 600; font-size: 15px; }
+.fields input { font: inherit; font-weight: 400; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; min-width: 0; }
+.fields input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.form-msg { color: var(--bad); font-weight: 600; min-height: 0; }
+.form-msg:empty { display: none; }
+.work-start .btn { justify-self: start; }
+.student-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.student-bar[hidden] { display: none; }
+.linkish { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; padding: 0; font-weight: 600; }
+.work-result { text-align: center; display: grid; gap: 6px; justify-items: center; border: 2px solid var(--accent); }
+.work-result[hidden] { display: none; }
+.work-result .who { font-family: var(--font-display); font-size: 19px; font-weight: 600; }
+.work-result .score { font-family: var(--font-display); font-size: 64px; font-weight: 700; color: var(--accent); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.work-result .score small { font-size: 30px; color: var(--muted); }
+.work-result .pct { font-size: 18px; }
+.work-result .when { font-size: 13px; color: var(--muted); }
+.work-result .hint { color: var(--muted); font-size: 15px; }
+.card.in-zone { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--surface)); }
+.card.right { cursor: default; border-color: var(--good); background: color-mix(in srgb, var(--good) 16%, var(--surface)); }
+.card.wrong { cursor: default; border-color: var(--bad); background: color-mix(in srgb, var(--bad) 13%, var(--surface)); }
+.card .mark { font-weight: 700; } .card.right .mark { color: var(--good); } .card.wrong .mark { color: var(--bad); }
+.card .fix { display: block; font-size: 12.5px; font-weight: 500; color: var(--bad); }
+.toast.good { color: var(--good); } .toast.bad { color: var(--bad); }
+
+/* ---------- step ordering ---------- */
+.scen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.scen-btn { cursor: pointer; text-align: left; display: grid; gap: 4px; padding: 12px 16px; border-radius: var(--radius); border: 2px solid var(--line); background: var(--surface); box-shadow: var(--shadow); }
+.scen-btn:hover { border-color: var(--accent); }
+.scen-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.scen-btn b { font-family: var(--font-display); font-size: 16px; }
+.scen-btn small { color: var(--muted); font-size: 14px; }
+.scen-btn .badge2 { justify-self: start; font-size: 12.5px; font-weight: 600; padding: 1px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.scen-btn .badge2.done { background: color-mix(in srgb, var(--good) 16%, var(--surface)); color: var(--good); }
+.ord-board { display: grid; gap: 16px; }
+.ord-q { font-family: var(--font-display); font-size: clamp(18px, 2.4vw, 21px); font-weight: 600; }
+.ord-q small { display: block; font-family: var(--font-body); font-weight: 400; font-size: 15px; color: var(--muted); }
+.ord-pool { display: flex; flex-wrap: wrap; gap: 10px; min-height: 58px; padding: 12px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.ord-pool:empty::after { content: "วางบัตรครบแล้ว ตรวจทานลำดับ แล้วกด “ตรวจคำตอบ”"; color: var(--muted); font-size: 15px; align-self: center; }
+.ord-card { cursor: pointer; text-align: left; font: inherit; font-size: 16px; font-weight: 500; color: var(--fg); padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 2px 0 var(--line), var(--shadow); max-width: 100%; }
+.ord-card:hover:not(:disabled) { border-color: var(--accent); }
+.ord-card:disabled { cursor: default; }
+.ord-slots { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.ord-slot { position: relative; display: grid; gap: 8px; align-content: start; min-height: 150px; padding: 12px; border-radius: var(--radius); border: 2px dashed color-mix(in srgb, var(--c) 45%, var(--line)); background: color-mix(in srgb, var(--c) 6%, var(--surface)); }
+.ord-slot:nth-child(1) { --c: var(--u-in); } .ord-slot:nth-child(2) { --c: var(--u-cpu); } .ord-slot:nth-child(3) { --c: var(--u-ram); } .ord-slot:nth-child(4) { --c: var(--u-out); }
+.ord-slot:not(:last-child)::after { content: "→"; position: absolute; right: -15px; top: 14px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 13px; z-index: 1; }
+.ord-slot .no { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--c); }
+.ord-slot .ph { color: var(--muted); font-size: 14.5px; }
+.ord-slot .ord-card { width: 100%; }
+.ord-card.right { border-color: var(--good); background: color-mix(in srgb, var(--good) 14%, var(--surface)); }
+.ord-card.wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--surface)); }
+.ord-slot .stepname { font-size: 14px; font-weight: 600; }
+.ord-slot .stepname.ok { color: var(--good); } .ord-slot .stepname.ng { color: var(--bad); }
+.ord-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.ord-score { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--accent); }
+
+footer { text-align: center; color: var(--muted); font-size: 13.5px; padding-block: 0 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+@media (max-width: 860px) {
+  .hero, .hl, .two { grid-template-columns: 1fr; }
+  .cycle { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .step, .step:first-child, .step:last-child { border-radius: var(--radius); border-left: 1px solid var(--line); }
+  .step::after { display: none; }
+  .zones { grid-template-columns: 1fr 1fr; }
+  .zone.wide, .storage { grid-column: span 2; }
+  .info { position: static; }
+  .cards4 { grid-template-columns: 1fr 1fr; }
+  .scen { grid-template-columns: 1fr; }
+  .ord-slots { grid-template-columns: 1fr 1fr; }
+  .ord-slot:not(:last-child)::after { display: none; }
+  nav.tabs { margin-left: 0; width: 100%; }
+}
+@media (max-width: 520px) {
+  .cards4, .cycle, .zones, .storage, .ord-slots { grid-template-columns: 1fr; }
+  .zone.wide, .storage, .storage > .cap { grid-column: auto; }
+  .think { grid-template-columns: 1fr; }
+  .modes, .fields { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg class="chip-logo" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="9" y="9" width="22" height="22" rx="4" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+        <rect x="15" y="15" width="10" height="10" rx="2" fill="var(--accent)"/>
+        <g stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round">
+          <path d="M15 4v5M20 4v5M25 4v5M15 31v5M20 31v5M25 31v5M4 15h5M4 20h5M4 25h5M31 15h5M31 20h5M31 25h5"/>
+        </g>
+      </svg>
+      <div><b>หลักการทำงานของระบบคอมพิวเตอร์</b><small>วิทยาการคำนวณ ม.2 • หน่วยที่ 3 ระบบคอมพิวเตอร์</small></div>
+    </div>
+    <nav class="tabs" aria-label="เมนูหลัก">
+      <a href="#home" data-view="home">หน้าแรก</a>
+      <a href="#theory" data-view="theory">ทฤษฎี</a>
+      <a href="#parts" data-view="parts">ส่วนประกอบ</a>
+      <a href="#sim" data-view="sim">แบบจำลอง</a>
+      <a href="#order" data-view="order">เรียงขั้นตอน</a>
+    </nav>
+    <button class="theme-btn" id="themeBtn" type="button" aria-label="สลับโหมดสว่าง/มืด" title="สลับโหมดสว่าง/มืด">🌙</button>
+  </div>
+</header>
+
+<main>
+  <!-- ================= HOME ================= -->
+  <section class="view" id="view-home">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">Computer System • 5 Units</div>
+        <h1>ข้อมูลเดินทางผ่าน <span>5 หน่วย</span> ก่อนกลายเป็นผลลัพธ์บนจอ</h1>
+        <p class="lead">ระบบคอมพิวเตอร์ทำงานร่วมกันเป็นระบบ ตั้งแต่หน่วยรับข้อมูล หน่วยประมวลผลกลาง หน่วยความจำหลัก หน่วยความจำสำรอง จนถึงหน่วยแสดงผลข้อมูล เรียนรู้หน้าที่ของแต่ละหน่วย แล้วลองจัดอุปกรณ์เข้าหน่วยให้ถูกต้อง</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#theory">เริ่มเรียนรู้</a>
+          <a class="btn" href="#sim">ลองแบบจำลอง</a>
+        </div>
+      </div>
+      <div class="board panel" aria-label="แผนภาพการไหลของข้อมูลผ่านหน่วยต่าง ๆ">
+        <svg viewBox="0 0 440 300" role="img" aria-labelledby="flowTitle">
+          <title id="flowTitle">ข้อมูลไหลจากหน่วยรับข้อมูล ไปหน่วยความจำหลักและซีพียู แล้วไปหน่วยแสดงผลและหน่วยความจำสำรอง</title>
+          <g fill="none" stroke-width="2.5">
+            <path class="flowline" d="M95 70 H170" stroke="var(--u-in)"/>
+            <path class="flowline" d="M270 70 H345" stroke="var(--u-out)"/>
+            <path class="flowline" d="M220 105 V170" stroke="var(--u-ram)"/>
+            <path class="flowline" d="M220 220 V250 H330" stroke="var(--u-sto)"/>
+          </g>
+          <g font-family="IBM Plex Sans Thai, sans-serif" font-weight="600" font-size="14" text-anchor="middle">
+            <rect x="10" y="40" width="85" height="60" rx="12" fill="var(--surface-2)" stroke="var(--u-in)" stroke-width="2"/>
+            <text x="52" y="66" fill="var(--fg)">รับข้อมูล</text><text x="52" y="86" fill="var(--u-in)" font-size="11" font-family="JetBrains Mono, monospace">INPUT</text>
+            <rect x="170" y="30" width="100" height="75" rx="14" fill="var(--surface-2)" stroke="var(--u-cpu)" stroke-width="3"/>
+            <text x="220" y="64" fill="var(--fg)" font-size="16">ซีพียู</text><text x="220" y="86" fill="var(--u-cpu)" font-size="11" font-family="JetBrains Mono, monospace">CPU</text>
+            <rect x="345" y="40" width="85" height="60" rx="12" fill="var(--surface-2)" stroke="var(--u-out)" stroke-width="2"/>
+            <text x="387" y="66" fill="var(--fg)">แสดงผล</text><text x="387" y="86" fill="var(--u-out)" font-size="11" font-family="JetBrains Mono, monospace">OUTPUT</text>
+            <rect x="160" y="170" width="120" height="50" rx="12" fill="var(--surface-2)" stroke="var(--u-ram)" stroke-width="2"/>
+            <text x="220" y="192" fill="var(--fg)">หน่วยความจำหลัก</text><text x="220" y="210" fill="var(--u-ram)" font-size="11" font-family="JetBrains Mono, monospace">RAM / ROM</text>
+            <rect x="330" y="225" width="100" height="50" rx="12" fill="var(--surface-2)" stroke="var(--u-sto)" stroke-width="2"/>
+            <text x="380" y="247" fill="var(--fg)">ความจำสำรอง</text><text x="380" y="265" fill="var(--u-sto)" font-size="11" font-family="JetBrains Mono, monospace">STORAGE</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="panel think">
+      <span class="badge">คำถามชวนคิด</span>
+      <div>
+        <p class="q">ถ้าเปรียบคอมพิวเตอร์เป็นร่างกายมนุษย์ หน่วยประมวลผลกลางเปรียบได้กับอวัยวะใด?</p>
+        <p class="answer" id="thinkAns" hidden>สมอง เพราะซีพียูประมวลผลข้อมูลตามคำสั่ง และควบคุมการทำงานของอุปกรณ์อื่น ๆ ในระบบ</p>
+      </div>
+      <button class="btn" id="thinkBtn" type="button">ดูคำตอบ</button>
+    </div>
+
+    <div class="cards4">
+      <a class="panel entry" href="#theory"><span class="num">01 ทฤษฎี</span><h3>Theory & Info</h3><p>หน้าที่ของ 5 หน่วย ขั้นตอนการทำงาน 4 ขั้น และเรื่องลงลึกของซีพียูกับหน่วยความจำ</p></a>
+      <a class="panel entry" href="#parts"><span class="num">02 ส่วนประกอบ</span><h3>Component Highlights</h3><p>คลิกอุปกรณ์บนโต๊ะคอมพิวเตอร์ เพื่อดูว่าอยู่หน่วยใดและทำหน้าที่อะไร</p></a>
+      <a class="panel entry" href="#sim"><span class="num">03 แบบจำลอง</span><h3>Interactive Simulator</h3><p>ลากบัตรคำอุปกรณ์ 15 ใบเข้าหน่วยที่ถูกต้อง ตามใบงานที่ 3.2.1</p></a>
+      <a class="panel entry" href="#order"><span class="num">04 เรียงขั้นตอน</span><h3>Processing Order</h3><p>เรียงขั้นตอนการทำงาน 4 ขั้นของคอมพิวเตอร์ตามสถานการณ์จริง แล้วตรวจคำตอบพร้อมคะแนน</p></a>
+    </div>
+  </section>
+
+  <!-- ================= THEORY ================= -->
+  <section class="view" id="view-theory" hidden>
+    <div class="section-head">
+      <div class="eyebrow">Theory & Info</div>
+      <h2>หน่วยการทำงานทั้ง 5 ของระบบคอมพิวเตอร์</h2>
+      <p>การทำงานของคอมพิวเตอร์ต้องอาศัยหน่วยต่าง ๆ ทำงานร่วมกันอย่างเป็นระบบ แต่ละหน่วยมีอุปกรณ์ที่ทำหน้าที่แตกต่างกัน</p>
+    </div>
+    <div class="units" id="unitCards"></div>
+
+    <div class="section-head">
+      <div class="eyebrow">Processing Cycle</div>
+      <h2>ขั้นตอนการทำงานของระบบคอมพิวเตอร์</h2>
+      <p>ทุกครั้งที่เราใช้งานคอมพิวเตอร์ ข้อมูลจะผ่านขั้นตอนเหล่านี้ (ใบงานที่ 3.2.2)</p>
+    </div>
+    <div class="cycle">
+      <div class="step"><span class="n">ขั้นที่ 1</span><h3>การรับข้อมูล</h3><p>รับข้อมูลและคำสั่งจากผู้ใช้เข้าสู่เครื่อง ผ่านอุปกรณ์ เช่น แป้นพิมพ์ เมาส์</p></div>
+      <div class="step"><span class="n">ขั้นที่ 2</span><h3>การประมวลผลข้อมูล</h3><p>นำข้อมูลที่รับมาเก็บไว้ในหน่วยความจำ แล้วนำมาประมวลผลตามคำสั่ง</p></div>
+      <div class="step"><span class="n">ขั้นที่ 3</span><h3>การจัดเก็บข้อมูล</h3><p>ขณะประมวลผลใช้หน่วยความจำหลัก ถ้าต้องการเก็บไว้ใช้ครั้งต่อไปจะเก็บลงหน่วยความจำสำรอง</p></div>
+      <div class="step"><span class="n">ขั้นที่ 4</span><h3>การแสดงผลข้อมูล</h3><p>แสดงผลลัพธ์ในรูปแบบที่มนุษย์เข้าใจ ผ่านอุปกรณ์ เช่น จอภาพ เครื่องพิมพ์</p></div>
+    </div>
+    <div><a class="btn primary" href="#order">ลองเรียงขั้นตอนตามสถานการณ์ →</a></div>
+
+    <div class="section-head">
+      <div class="eyebrow">Deep Dive</div>
+      <h2>เรียนรู้ลงลึก</h2>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>ภายในซีพียู (CPU)</h3>
+        <p style="color:var(--muted);margin-top:6px">ซีพียูหรือไมโครโพรเซสเซอร์ (Microprocessor) มีส่วนสำคัญ 2 ส่วน และทำงานเป็นรอบซ้ำ ๆ เรียกว่า รอบการทำงานของเครื่อง (Machine Cycle)</p>
+        <div class="tags" style="margin-top:12px">
+          <span class="tag">หน่วยควบคุม (CU) – ควบคุมและสั่งงานหน่วยต่าง ๆ</span>
+          <span class="tag">หน่วยคำนวณและตรรกะ (ALU) – คำนวณและเปรียบเทียบ</span>
+        </div>
+        <div class="mcycle" aria-label="รอบการทำงานของซีพียู">
+          <span>FETCH ดึงคำสั่ง</span><span>DECODE ถอดรหัส</span><span>EXECUTE ทำงาน</span><span>STORE เก็บผล</span>
+        </div>
+        <details>
+          <summary>ความเร็วของซีพียูวัดอย่างไร?</summary>
+          <p>วัดจากความถี่สัญญาณนาฬิกา หน่วยเป็นกิกะเฮิรตซ์ (GHz) เช่น 3.2 GHz หมายถึงทำงานได้ประมาณ 3,200 ล้านรอบต่อวินาที</p>
+        </details>
+      </div>
+      <div class="panel">
+        <h3>องค์ประกอบของระบบคอมพิวเตอร์</h3>
+        <p style="color:var(--muted);margin-top:6px">ทบทวน: ระบบคอมพิวเตอร์ไม่ได้มีแค่ตัวเครื่อง แต่มีองค์ประกอบสำคัญ 5 ส่วน</p>
+        <div class="components5">
+          <span>ฮาร์ดแวร์</span><span>ซอฟต์แวร์</span><span>บุคลากร</span><span>ข้อมูลสารสนเทศ</span><span>กระบวนการ</span>
+        </div>
+        <details>
+          <summary>ฮาร์ดแวร์ต่างจากซอฟต์แวร์อย่างไร?</summary>
+          <p>ฮาร์ดแวร์คืออุปกรณ์ที่จับต้องได้ เช่น จอภาพ เมาส์ ส่วนซอฟต์แวร์คือชุดคำสั่งหรือโปรแกรมที่สั่งให้ฮาร์ดแวร์ทำงาน</p>
+        </details>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>เปรียบเทียบหน่วยเก็บข้อมูล</h3>
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>ชนิด</th><th>หน่วย</th><th>ข้อมูลหายเมื่อปิดเครื่อง</th><th>ใช้ทำอะไร</th></tr></thead>
+          <tbody>
+            <tr><td><b>แรม (RAM)</b></td><td>ความจำหลัก</td><td class="yes">หาย</td><td>เก็บข้อมูลและคำสั่งที่กำลังประมวลผล ทำงานคู่กับซีพียู</td></tr>
+            <tr><td><b>รอม (ROM)</b></td><td>ความจำหลัก</td><td class="no">ไม่หาย</td><td>เก็บคำสั่งเริ่มต้นการทำงานของเครื่อง อ่านได้อย่างเดียว</td></tr>
+            <tr><td><b>ฮาร์ดดิสก์ / SSD</b></td><td>ความจำสำรอง</td><td class="no">ไม่หาย</td><td>เก็บโปรแกรมและไฟล์ไว้ใช้งานในภายหลัง</td></tr>
+            <tr><td><b>แฟลชไดรฟ์ เมมโมรีการ์ด แผ่นซีดี</b></td><td>ความจำสำรอง</td><td class="no">ไม่หาย</td><td>เก็บและพกพาข้อมูล</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PARTS ================= -->
+  <section class="view" id="view-parts" hidden>
+    <div class="section-head">
+      <div class="eyebrow">Component Highlights</div>
+      <h2>อุปกรณ์แต่ละชิ้นอยู่หน่วยใด?</h2>
+      <p>คลิกอุปกรณ์บนโต๊ะเพื่อดูหน้าที่ หรือกดเลือกหน่วยเพื่อไฮไลต์อุปกรณ์ทั้งหมดในหน่วยนั้น</p>
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="hl">
+      <div class="panel scene" id="scene"></div>
+      <aside class="panel info" id="info" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <!-- ================= SIMULATOR ================= -->
+  <section class="view" id="view-sim" hidden>
+    <div class="section-head">
+      <div class="eyebrow">Interactive Simulator • ใบงานที่ 3.2.1</div>
+      <h2>ลากบัตรคำอุปกรณ์ไปใส่หน่วยที่ถูกต้อง</h2>
+      <p id="simIntro"></p>
+    </div>
+    <div class="modes" role="group" aria-label="เลือกโหมด">
+      <button class="mode-btn" type="button" data-mode="practice" aria-pressed="true"><b>โหมดฝึก</b><small>รู้ผลทันทีทุกครั้งที่วาง</small></button>
+      <button class="mode-btn" type="button" data-mode="work" aria-pressed="false"><b>โหมดทำใบงาน 3.2.1</b><small>วางให้ครบ แล้วส่งเพื่อดูเฉลยและคะแนน</small></button>
+    </div>
+
+    <form class="panel work-start" id="workStart" hidden autocomplete="off">
+      <h3>กรอกข้อมูลก่อนเริ่มทำใบงาน</h3>
+      <div class="fields">
+        <label>ชื่อ–สกุล<input name="sname" maxlength="60" placeholder="เช่น ด.ญ.ใจดี เรียนเก่ง"></label>
+        <label>เลขที่<input name="sno" maxlength="3" inputmode="numeric" placeholder="เช่น 12"></label>
+        <label>ห้อง (ม.)<input name="sroom" maxlength="6" placeholder="เช่น 2/3"></label>
+      </div>
+      <p class="form-msg" id="formMsg" aria-live="polite"></p>
+      <button class="btn primary" type="submit">เริ่มทำใบงาน</button>
+    </form>
+
+    <div id="simArea" class="sim-area">
+      <div class="student-bar" id="studentBar" hidden><span>ผู้ทำ: <b id="studentName"></b></span><button class="linkish" type="button" id="changeStudent">เปลี่ยนชื่อ</button></div>
+      <div class="panel work-result" id="workResult" hidden aria-live="polite"></div>
+      <div class="sim-top">
+        <div class="meter"><span class="mono" id="simCount">0/15</span><div class="bar"><i id="simBar"></i></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="mono" id="simMiss" style="align-self:center;color:var(--muted)">วางผิด 0 ครั้ง</span>
+          <button class="btn" id="simReset" type="button">เริ่มใหม่</button>
+          <button class="btn primary" id="simSubmit" type="button" hidden disabled>ส่งคำตอบ</button>
+        </div>
+      </div>
+      <div class="tray" id="tray" aria-label="บัตรคำ"></div>
+      <p class="toast" id="toast" aria-live="polite"></p>
+      <div class="zones" id="zones"></div>
+    </div>
+  </section>
+
+  <!-- ================= STEP ORDERING ================= -->
+  <section class="view" id="view-order" hidden>
+    <div class="section-head">
+      <div class="eyebrow">Processing Order • ขั้นตอนการทำงาน 4 ขั้น</div>
+      <h2>เรียงขั้นตอนการทำงานของระบบคอมพิวเตอร์</h2>
+      <p>เลือกสถานการณ์ แล้วแตะบัตรตามลำดับที่เกิดขึ้นจริง บัตรจะไปอยู่ในช่องว่างถัดไป (แตะบัตรในช่องเพื่อนำกลับ) เมื่อครบ 4 ช่องให้กด “ตรวจคำตอบ”</p>
+    </div>
+    <div class="scen" id="scenList" role="group" aria-label="เลือกสถานการณ์"></div>
+    <div class="panel ord-board">
+      <p class="ord-q" id="ordQ"></p>
+      <div class="ord-pool" id="ordPool" aria-label="บัตรขั้นตอน"></div>
+      <ol class="ord-slots" id="ordSlots"></ol>
+      <div class="ord-actions">
+        <button class="btn primary" type="button" id="ordCheck" disabled>ตรวจคำตอบ</button>
+        <button class="btn" type="button" id="ordReset">เริ่มใหม่</button>
+        <button class="btn" type="button" id="ordNext" hidden>สถานการณ์ถัดไป →</button>
+        <span class="ord-score" id="ordScore" aria-live="polite"></span>
+      </div>
+      <p class="toast" id="ordMsg" aria-live="polite"></p>
+    </div>
+  </section>
+</main>
+<footer>วิทยาการคำนวณ ม.2 • หน่วยที่ 3 ระบบคอมพิวเตอร์ • แผนการจัดการเรียนรู้ที่ 2 หลักการทำงานของระบบคอมพิวเตอร์</footer>
+
+<script>
+(() => {
+  const root = document.documentElement, btn = document.getElementById('themeBtn');
+  let t = 'light'; try { t = localStorage.getItem('cs-theme') || 'light'; } catch (e) {}
+  const apply = v => { root.dataset.theme = v; btn.textContent = v === 'light' ? '🌙' : '☀️'; };
+  apply(t);
+  btn.addEventListener('click', () => { t = t === 'light' ? 'dark' : 'light'; apply(t); try { localStorage.setItem('cs-theme', t); } catch (e) {} });
+})();
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const UNITS = {
+    in:  { name: 'หน่วยรับข้อมูล', en: 'Input Unit', c: 'var(--u-in)', desc: 'รับข้อมูลจากผู้ใช้เข้าสู่คอมพิวเตอร์ เช่น ตัวอักษร ตัวเลข สัญลักษณ์ แล้วแปลงเป็นสัญญาณไฟฟ้าที่คอมพิวเตอร์เข้าใจ และนำไปเก็บที่หน่วยความจำหลักเพื่อประมวลผลต่อไป' },
+    cpu: { name: 'หน่วยประมวลผลกลาง', en: 'CPU', c: 'var(--u-cpu)', desc: 'ประมวลผลข้อมูลตามชุดคำสั่งจากซอฟต์แวร์ แล้วส่งผลลัพธ์ไปแสดงผล เปรียบได้กับ “สมอง” ของคอมพิวเตอร์ ที่ประมวลผลและควบคุมอุปกรณ์อื่น ๆ ในระบบ' },
+    ram: { name: 'หน่วยความจำหลัก', en: 'Main Memory', c: 'var(--u-ram)', desc: 'เก็บข้อมูลและคำสั่งที่อยู่ระหว่างการประมวลผล ทำงานควบคู่กับซีพียู ช่วยให้การทำงานของซีพียูมีประสิทธิภาพมากยิ่งขึ้น' },
+    sto: { name: 'หน่วยความจำสำรอง', en: 'Secondary Storage', c: 'var(--u-sto)', desc: 'เก็บข้อมูลและโปรแกรมที่ต้องการใช้งานในภายหลัง เป็นหน่วยความจำสำหรับเก็บข้อมูลถาวร' },
+    out: { name: 'หน่วยแสดงผลข้อมูล', en: 'Output Unit', c: 'var(--u-out)', desc: 'แสดงผลที่ได้จากการประมวลผล เพื่อสื่อสารกับผู้ใช้ในรูปแบบภาพ เสียง และสิ่งพิมพ์' },
+  };
+  const ORDER = ['in', 'cpu', 'ram', 'sto', 'out'];
+  // answer key from ใบงานที่ 3.2.1
+  const CARDS = [
+    ['แป้นพิมพ์', 'in'], ['เมาส์', 'in'], ['สแกนเนอร์', 'in'], ['เครื่องบันทึกเสียง', 'in'], ['ไมโครโฟน', 'in'],
+    ['ซีพียู', 'cpu'], ['จอภาพ', 'out'], ['ลำโพง', 'out'], ['ปรินต์เตอร์', 'out'],
+    ['แรม', 'ram'], ['รอม', 'ram'], ['แฟลชไดรฟ์', 'sto'], ['ฮาร์ดดิสก์', 'sto'], ['เมมโมรีการ์ด', 'sto'], ['แผ่นซีดี', 'sto'],
+  ];
+
+  /* ---------- routing ---------- */
+  const views = ['home', 'theory', 'parts', 'sim', 'order'];
+  function route() {
+    const v = views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
+    views.forEach(n => { $('#view-' + n).hidden = n !== v; });
+    document.querySelectorAll('nav.tabs a').forEach(a => { if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    window.scrollTo({ top: 0 });
+  }
+  window.addEventListener('hashchange', route);
+  route();
+
+  /* ---------- home ---------- */
+  $('#thinkBtn').addEventListener('click', () => {
+    const a = $('#thinkAns'); a.hidden = !a.hidden; $('#thinkBtn').textContent = a.hidden ? 'ดูคำตอบ' : 'ซ่อนคำตอบ';
+  });
+
+  /* ---------- theory ---------- */
+  $('#unitCards').innerHTML = ORDER.map(k => {
+    const u = UNITS[k], ex = CARDS.filter(c => c[1] === k).map(c => `<span class="tag">${c[0]}</span>`).join('');
+    return `<article class="panel unit-card" style="--c:${u.c}"><h3>${u.name}<small>${u.en}</small></h3><p>${u.desc}</p><div class="tags">${ex}</div></article>`;
+  }).join('');
+
+  /* ---------- component highlights ---------- */
+  const DEVICES = [
+    { id: 'monitor', name: 'จอภาพ', u: 'out', role: 'แสดงผลลัพธ์เป็นภาพและตัวอักษรให้ผู้ใช้เห็น' },
+    { id: 'speaker', name: 'ลำโพง', u: 'out', role: 'แสดงผลลัพธ์ออกมาเป็นเสียง' },
+    { id: 'printer', name: 'ปรินต์เตอร์', u: 'out', role: 'แสดงผลลัพธ์ออกมาเป็นสิ่งพิมพ์บนกระดาษ' },
+    { id: 'keyboard', name: 'แป้นพิมพ์', u: 'in', role: 'รับข้อมูลตัวอักษร ตัวเลข และคำสั่งจากการกดแป้น' },
+    { id: 'mouse', name: 'เมาส์', u: 'in', role: 'รับคำสั่งจากการเลื่อนตำแหน่งและคลิก' },
+    { id: 'mic', name: 'ไมโครโฟน', u: 'in', role: 'รับข้อมูลเสียงแล้วแปลงเป็นสัญญาณที่คอมพิวเตอร์เข้าใจ' },
+    { id: 'scanner', name: 'สแกนเนอร์', u: 'in', role: 'รับข้อมูลภาพจากเอกสารหรือรูปถ่ายเข้าสู่เครื่อง' },
+    { id: 'cpu', name: 'ซีพียู', u: 'cpu', role: 'ประมวลผลข้อมูลตามคำสั่ง และควบคุมการทำงานของอุปกรณ์อื่น อยู่บนเมนบอร์ดภายในตัวเครื่อง' },
+    { id: 'ram', name: 'แรม', u: 'ram', role: 'เก็บข้อมูลที่กำลังประมวลผลชั่วคราว ข้อมูลหายเมื่อปิดเครื่อง' },
+    { id: 'hdd', name: 'ฮาร์ดดิสก์', u: 'sto', role: 'เก็บโปรแกรมและไฟล์แบบถาวร อยู่ภายในตัวเครื่อง' },
+    { id: 'flash', name: 'แฟลชไดรฟ์', u: 'sto', role: 'เก็บข้อมูลถาวรและพกพาได้ เสียบผ่านช่อง USB' },
+  ];
+  const svg = `
+  <svg viewBox="0 0 640 420" role="img" aria-label="โต๊ะคอมพิวเตอร์พร้อมอุปกรณ์ต่าง ๆ">
+    <rect x="10" y="300" width="620" height="14" rx="4" fill="var(--line)"/>
+    ${dev('monitor', `<rect class="shape" x="150" y="40" width="230" height="150" rx="10"/><rect x="250" y="190" width="30" height="40" fill="var(--line)"/><rect x="215" y="228" width="100" height="10" rx="4" fill="var(--line)"/>`, 265, 120)}
+    ${dev('speaker', `<rect class="shape" x="95" y="120" width="44" height="100" rx="10"/><circle cx="117" cy="190" r="12" fill="none" stroke="var(--line)" stroke-width="2"/>`, 117, 150, 12)}
+    ${dev('printer', `<rect class="shape" x="20" y="232" width="120" height="66" rx="8"/><rect x="40" y="218" width="80" height="16" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/>`, 80, 270)}
+    ${dev('keyboard', `<rect class="shape" x="170" y="255" width="200" height="40" rx="8"/>`, 270, 281)}
+    ${dev('mouse', `<rect class="shape" x="390" y="258" width="34" height="40" rx="17"/>`, 407, 330, 12)}
+    ${dev('mic', `<rect class="shape" x="440" y="150" width="26" height="48" rx="13"/><rect x="451" y="198" width="4" height="60" fill="var(--line)"/><rect x="436" y="256" width="34" height="8" rx="3" fill="var(--line)"/>`, 453, 140, 12)}
+    ${dev('scanner', `<rect class="shape" x="20" y="330" width="150" height="50" rx="8"/>`, 95, 361)}
+    <g>
+      <rect x="490" y="70" width="135" height="228" rx="12" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/>
+      <text x="557" y="92" text-anchor="middle" font-size="12" font-family="JetBrains Mono, monospace" fill="var(--muted)">SYSTEM UNIT</text>
+    </g>
+    ${dev('cpu', `<rect class="shape" x="510" y="104" width="56" height="56" rx="6"/>`, 538, 137, 12)}
+    ${dev('ram', `<rect class="shape" x="578" y="104" width="16" height="78" rx="3"/><rect class="shape" x="600" y="104" width="16" height="78" rx="3"/>`, 597, 200, 12)}
+    ${dev('hdd', `<rect class="shape" x="510" y="214" width="96" height="58" rx="6"/>`, 558, 247, 12)}
+    ${dev('flash', `<rect class="shape" x="470" y="330" width="80" height="30" rx="6"/><rect x="550" y="337" width="22" height="16" fill="var(--line)"/>`, 510, 390, 12)}
+  </svg>`;
+  function dev(id, shapes, lx, ly, fs = 14) {
+    const d = DEVICES.find(x => x.id === id);
+    return `<g class="dev" data-id="${id}" tabindex="0" role="button" aria-label="${d.name}" style="--c:${UNITS[d.u].c}">${shapes}<text class="lbl" x="${lx}" y="${ly}" text-anchor="middle" style="font-size:${fs}px">${d.name}</text></g>`;
+  }
+  const scene = $('#scene'); scene.innerHTML = svg;
+  const filters = $('#filters');
+  filters.innerHTML = [`<button class="filter" type="button" data-u="all" aria-pressed="true">ทั้งหมด</button>`]
+    .concat(ORDER.map(k => `<button class="filter" type="button" data-u="${k}" aria-pressed="false" style="--c:${UNITS[k].c}"><span class="unit-dot" style="background:${UNITS[k].c}"></span>${UNITS[k].name}</button>`)).join('');
+  function showUnit(k) {
+    filters.querySelectorAll('.filter').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.u === k)));
+    scene.classList.toggle('filtering', k !== 'all');
+    scene.querySelectorAll('.dev').forEach(g => g.classList.toggle('on', k !== 'all' && DEVICES.find(d => d.id === g.dataset.id).u === k));
+    if (k === 'all') return showDevice('cpu');
+    const u = UNITS[k], list = DEVICES.filter(d => d.u === k).map(d => d.name).join(' • ');
+    $('#info').style.setProperty('--c', u.c);
+    $('#info').innerHTML = `<span class="unitname"><span class="unit-dot" style="background:${u.c}"></span>${u.en}</span><h3>${u.name}</h3><p>${u.desc}</p><p class="hint">อุปกรณ์บนโต๊ะในหน่วยนี้: ${list}</p>`;
+  }
+  function showDevice(id) {
+    const d = DEVICES.find(x => x.id === id), u = UNITS[d.u];
+    scene.classList.remove('filtering');
+    filters.querySelectorAll('.filter').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.u === 'all')));
+    scene.querySelectorAll('.dev').forEach(g => g.classList.toggle('on', g.dataset.id === id));
+    $('#info').style.setProperty('--c', u.c);
+    $('#info').innerHTML = `<span class="unitname"><span class="unit-dot" style="background:${u.c}"></span>${u.name}</span><h3>${d.name}</h3><p>${d.role}</p><p class="hint">${u.name}: ${u.desc}</p>`;
+  }
+  filters.addEventListener('click', e => { const b = e.target.closest('.filter'); if (b) showUnit(b.dataset.u); });
+  scene.addEventListener('click', e => { const g = e.target.closest('.dev'); if (g) showDevice(g.dataset.id); });
+  scene.addEventListener('keydown', e => { const g = e.target.closest('.dev'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showDevice(g.dataset.id); } });
+  showDevice('cpu');
+
+  /* ---------- simulator: practice mode + worksheet 3.2.1 mode ---------- */
+  const tray = $('#tray'), zones = $('#zones'), toast = $('#toast');
+  const PASS = 9; // 60% of 15
+  let mode = 'practice', placed = 0, miss = 0, selected = null, submitted = false, student = null;
+  const zoneHtml = k => `<div class="zone" data-u="${k}" style="--c:${UNITS[k].c}" tabindex="0" role="button" aria-label="วางในช่อง${UNITS[k].name}">
+      <header><span class="unit-dot" style="background:${UNITS[k].c}"></span><b>${UNITS[k].name}</b><small>${UNITS[k].en}</small></header><div class="slot"></div></div>`;
+  zones.innerHTML = zoneHtml('in') + zoneHtml('cpu') + zoneHtml('out') +
+    `<div class="storage"><span class="cap">หน่วยเก็บข้อมูล</span>${zoneHtml('ram')}${zoneHtml('sto')}</div>`;
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  const say = (cls, t) => { toast.className = 'toast' + (cls ? ' ' + cls : ''); toast.textContent = t; };
+  function clearSel() { if (selected) selected.classList.remove('selected'); selected = null; }
+
+  function resetSim() {
+    placed = 0; miss = 0; submitted = false; clearSel(); say('', '');
+    zones.querySelectorAll('.slot').forEach(s => { s.innerHTML = ''; });
+    tray.innerHTML = shuffle(CARDS.slice()).map(([n, u]) => `<div class="card" data-u="${u}" tabindex="0" role="button">${n}</div>`).join('');
+    $('#workResult').hidden = true;
+    updateMeter();
+  }
+  function updateMeter() {
+    if (mode === 'work') placed = 15 - tray.querySelectorAll('.card').length;
+    $('#simCount').textContent = `${placed}/15`; $('#simBar').style.width = (placed / 15 * 100) + '%';
+    $('#simMiss').textContent = `วางผิด ${miss} ครั้ง`;
+    $('#simMiss').hidden = mode === 'work';
+    const sub = $('#simSubmit');
+    sub.hidden = mode !== 'work' || submitted; sub.disabled = placed < 15;
+    if (mode === 'practice' && placed === 15) say('good', miss === 0 ? 'ยอดเยี่ยม! จัดอุปกรณ์ถูกทั้งหมดโดยไม่ผิดเลย' : `เสร็จแล้ว! จัดถูกครบ 15 บัตรคำ (วางผิดระหว่างทาง ${miss} ครั้ง)`);
+    if (mode === 'work' && !submitted) say('', placed < 15 ? `วางบัตรคำให้ครบ 15 ใบ แล้วกด “ส่งคำตอบ” (ย้ายบัตรไปกล่องอื่นได้จนกว่าจะส่ง)` : 'วางครบแล้ว ตรวจทานอีกครั้ง แล้วกด “ส่งคำตอบ”');
+  }
+
+  // practice: only the right unit accepts the card. worksheet: any unit (or back to the tray), no feedback until submit
+  function tryPlace(card, target) {
+    if (!card || !target || submitted) return;
+    clearSel();
+    if (mode === 'work') {
+      if (target === tray) tray.appendChild(card);
+      else { target.querySelector('.slot').appendChild(card); card.style.setProperty('--c', UNITS[target.dataset.u].c); }
+      card.classList.toggle('in-zone', target !== tray);
+      if (target === tray) card.style.removeProperty('--c');
+      updateMeter(); return;
+    }
+    if (target === tray) return;
+    const want = card.dataset.u, got = target.dataset.u;
+    if (want === got) {
+      card.classList.add('placed'); card.style.setProperty('--c', UNITS[got].c); card.removeAttribute('tabindex'); card.removeAttribute('role');
+      target.querySelector('.slot').appendChild(card); placed++;
+      say('good', `ถูกต้อง! ${card.textContent} อยู่ใน${UNITS[got].name}`);
+    } else {
+      miss++; card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+      say('bad', `ยังไม่ถูก ${card.textContent} ไม่ได้อยู่ใน${UNITS[got].name} ลองคิดว่าอุปกรณ์นี้ “รับ” “ประมวลผล” “แสดงผล” หรือ “เก็บ” ข้อมูล`);
+    }
+    updateMeter();
+  }
+  const movable = c => c && !c.classList.contains('placed') && !submitted;
+
+  // pointer drag + tap-to-select (cards in the tray, and in worksheet mode also cards already in a unit)
+  const simArea = $('#simArea');
+  let drag = null;
+  simArea.addEventListener('pointerdown', e => {
+    const card = e.target.closest('.card'); if (!movable(card)) return;
+    drag = { card, x: e.clientX, y: e.clientY, ghost: null, id: e.pointerId };
+  });
+  const dropTarget = (x, y) => { const el = document.elementFromPoint(x, y); return el?.closest('.zone') || (el?.closest('#tray') ? tray : null); };
+  window.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (!drag.ghost && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) {
+      drag.ghost = drag.card.cloneNode(true); drag.ghost.classList.add('ghost'); document.body.appendChild(drag.ghost);
+      drag.card.style.opacity = '.35';
+    }
+    if (drag.ghost) {
+      drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px';
+      zones.querySelectorAll('.zone').forEach(z => z.classList.remove('over'));
+      const z = dropTarget(e.clientX, e.clientY); if (z && z !== tray) z.classList.add('over');
+    }
+  });
+  window.addEventListener('pointerup', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    zones.querySelectorAll('.zone').forEach(z => z.classList.remove('over'));
+    if (d.ghost) {
+      d.ghost.remove(); d.card.style.opacity = '';
+      const t = dropTarget(e.clientX, e.clientY); if (t) tryPlace(d.card, t);
+    } else {
+      const was = selected === d.card; clearSel();
+      if (!was) { selected = d.card; d.card.classList.add('selected'); say('', `เลือก “${d.card.textContent}” แล้ว แตะกล่องหน่วยที่ต้องการวาง${mode === 'work' && d.card.classList.contains('in-zone') ? ' (หรือแตะช่องบัตรคำด้านบนเพื่อนำกลับ)' : ''}`); }
+    }
+  });
+  window.addEventListener('pointercancel', () => { if (drag?.ghost) { drag.ghost.remove(); drag.card.style.opacity = ''; } drag = null; });
+  zones.addEventListener('click', e => { const z = e.target.closest('.zone'); if (z && selected && !e.target.closest('.card')) tryPlace(selected, z); });
+  tray.addEventListener('click', e => { if (selected && !e.target.closest('.card')) tryPlace(selected, tray); });
+  simArea.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const c = e.target.closest('.card'), z = e.target.closest('.zone');
+    if (c && movable(c)) { e.preventDefault(); const was = selected === c; clearSel(); if (!was) { selected = c; c.classList.add('selected'); } return; }
+    if (z && selected) { e.preventDefault(); tryPlace(selected, z); }
+  });
+
+  // modes
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.mode-btn').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+    $('#simIntro').textContent = m === 'work'
+      ? 'ลากบัตรคำไปวางในกล่องหน่วยที่คิดว่าถูกต้องให้ครบ 15 ใบ ระบบจะยังไม่บอกว่าถูกหรือผิด เมื่อกด “ส่งคำตอบ” จึงเฉลยพร้อมแสดงคะแนน'
+      : 'ลากบัตรคำไปวางในกล่องหน่วย หรือแตะบัตรคำหนึ่งครั้งแล้วแตะกล่องที่ต้องการ ถ้าวางผิด บัตรจะกลับที่เดิมพร้อมคำใบ้';
+    const needInfo = m === 'work' && !student;
+    $('#workStart').hidden = !needInfo; simArea.hidden = needInfo;
+    $('#studentBar').hidden = m !== 'work' || !student;
+    resetSim();
+  }
+  document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  $('#workStart').addEventListener('submit', e => {
+    e.preventDefault();
+    const f = e.target, name = f.sname.value.trim(), no = f.sno.value.trim(), room = f.sroom.value.trim();
+    if (!name || !no || !room) { $('#formMsg').textContent = 'กรุณากรอกชื่อ เลขที่ และห้องให้ครบ'; return; }
+    $('#formMsg').textContent = '';
+    student = { name, no, room };
+    $('#studentName').textContent = `${name} • เลขที่ ${no} • ม.${room}`;
+    setMode('work');
+  });
+  $('#changeStudent').addEventListener('click', () => { student = null; setMode('work'); });
+
+  // submit: reveal the key on every card and show the score
+  $('#simSubmit').addEventListener('click', () => {
+    if (placed < 15 || submitted) return;
+    submitted = true; clearSel();
+    let score = 0;
+    zones.querySelectorAll('.zone').forEach(z => z.querySelectorAll('.card').forEach(c => {
+      const ok = c.dataset.u === z.dataset.u; if (ok) score++;
+      c.classList.add(ok ? 'right' : 'wrong'); c.removeAttribute('tabindex'); c.removeAttribute('role');
+      c.insertAdjacentHTML('beforeend', ok ? ' <span class="mark">✓</span>' : ` <span class="mark">✗</span><span class="fix">ที่ถูก: ${UNITS[c.dataset.u].name}</span>`);
+    }));
+    const pct = Math.round(score / 15 * 100), pass = score >= PASS;
+    const now = new Date();
+    const when = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const r = $('#workResult');
+    r.innerHTML = `<span class="eyebrow">ผลใบงานที่ 3.2.1</span>
+      <p class="who">${student.name} • เลขที่ ${student.no} • ม.${student.room}</p>
+      <div class="score">${score}<small>/15</small></div>
+      <p class="pct">ร้อยละ ${pct} — <b class="${pass ? 'yes' : 'no'}">${pass ? 'ผ่านเกณฑ์' : 'ยังไม่ผ่านเกณฑ์'}</b> (เกณฑ์ผ่าน 9 ข้อขึ้นไป)</p>
+      <p class="when mono">ส่งเมื่อ ${when}</p>
+      <p class="hint">บัตรคำสีเขียว = ถูก, สีแดง = ผิด (ใต้บัตรบอกหน่วยที่ถูก) • แคปหน้าจอนี้ส่งครู</p>
+      <button class="btn" type="button" id="workAgain">ทำใหม่อีกครั้ง</button>`;
+    r.hidden = false;
+    say('', ''); updateMeter();
+    $('#workAgain').addEventListener('click', () => { resetSim(); r.hidden = true; });
+    r.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('#simReset').addEventListener('click', resetSim);
+  setMode('practice');
+
+
+  /* ---------- step ordering (worksheet 3.2.2 idea) ---------- */
+  const STEPN = ['การรับข้อมูล', 'การประมวลผลข้อมูล', 'การจัดเก็บข้อมูล', 'การแสดงผลข้อมูล'];
+  const SCEN = [
+    { t: 'สแกนรูปภาพ แล้วสั่งพิมพ์', q: 'นักเรียนสแกนรูปภาพจากกระดาษ แล้วสั่งพิมพ์ออกทางปรินต์เตอร์',
+      s: ['สแกนเนอร์อ่านภาพจากกระดาษเข้าสู่เครื่อง', 'ซีพียูประมวลผลภาพตามคำสั่งพิมพ์', 'เก็บภาพไว้ในแรมระหว่างทำงาน และบันทึกลงฮาร์ดดิสก์', 'ปรินต์เตอร์พิมพ์ภาพออกมาเป็นสิ่งพิมพ์'] },
+    { t: 'พิมพ์รายงาน', q: 'นักเรียนพิมพ์รายงานด้วยแป้นพิมพ์ บันทึกไฟล์ แล้วดูผลงานบนจอ',
+      s: ['กดแป้นพิมพ์เพื่อป้อนข้อความรายงาน', 'ซีพียูประมวลผลคำสั่งพิมพ์และจัดรูปแบบข้อความ', 'บันทึกไฟล์รายงานลงแฟลชไดรฟ์', 'จอภาพแสดงรายงานที่พิมพ์เสร็จแล้ว'] },
+    { t: 'อัดเสียงร้องเพลง', q: 'นักเรียนอัดเสียงร้องเพลงผ่านไมโครโฟน แล้วเปิดฟังทางลำโพง',
+      s: ['ไมโครโฟนรับเสียงร้องเข้าสู่เครื่อง', 'ซีพียูแปลงและประมวลผลสัญญาณเสียง', 'เก็บไฟล์เสียงลงเมมโมรีการ์ด', 'ลำโพงเล่นเสียงเพลงที่อัดไว้ออกมา'] },
+  ];
+  const scenList = $('#scenList'), ordPool = $('#ordPool'), ordSlots = $('#ordSlots'), ordMsg = $('#ordMsg');
+  const ordResults = SCEN.map(() => null);
+  let oc = 0, oOrder = [], oPlaced = [null, null, null, null], oChecked = false;
+  function renderScen() {
+    scenList.innerHTML = SCEN.map((sc, i) => `<button class="scen-btn" type="button" data-i="${i}" aria-pressed="${i === oc}"><b>สถานการณ์ที่ ${i + 1}</b><small>${sc.t}</small><span class="badge2${ordResults[i] != null ? ' done' : ''}">${ordResults[i] != null ? 'ได้ ' + ordResults[i] + '/4' : 'ยังไม่ทำ'}</span></button>`).join('');
+  }
+  function startScen(i) {
+    oc = i; oChecked = false; oPlaced = [null, null, null, null];
+    oOrder = shuffle([0, 1, 2, 3]); if (oOrder.join() === '0,1,2,3') oOrder.reverse();
+    $('#ordQ').innerHTML = `สถานการณ์: ${SCEN[i].q}<small>ข้อมูลผ่านขั้นตอนใดบ้าง เรียงจากขั้นแรกไปขั้นสุดท้าย</small>`;
+    ordMsg.textContent = ''; ordMsg.className = 'toast'; $('#ordScore').textContent = ''; $('#ordNext').hidden = true;
+    renderScen(); renderOrd();
+  }
+  function renderOrd() {
+    const sc = SCEN[oc];
+    ordPool.innerHTML = oOrder.filter(k => !oPlaced.includes(k)).map(k => `<button class="ord-card" type="button" data-k="${k}">${sc.s[k]}</button>`).join('');
+    ordSlots.innerHTML = oPlaced.map((k, pos) => {
+      let inner = '<span class="ph">แตะบัตรเพื่อวางในช่องนี้</span>';
+      if (k != null) {
+        const ok = k === pos;
+        inner = `<button class="ord-card${oChecked ? (ok ? ' right' : ' wrong') : ''}" type="button" data-k="${k}" ${oChecked ? 'disabled' : ''}>${sc.s[k]}${oChecked ? (ok ? ' ✓' : ' ✗') : ''}</button>`;
+        if (oChecked) inner += ok ? `<span class="stepname ok">${STEPN[pos]}</span>` : `<span class="stepname ng">บัตรนี้เป็นขั้นที่ ${k + 1} (${STEPN[k]})</span>`;
+      }
+      return `<li class="ord-slot"><span class="no">ลำดับที่ ${pos + 1}</span>${inner}</li>`;
+    }).join('');
+    const full = oPlaced.every(k => k != null);
+    $('#ordCheck').disabled = !full || oChecked;
+  }
+  scenList.addEventListener('click', e => { const b = e.target.closest('.scen-btn'); if (b) startScen(+b.dataset.i); });
+  ordPool.addEventListener('click', e => {
+    const c = e.target.closest('.ord-card'); if (!c || oChecked) return;
+    const pos = oPlaced.indexOf(null); if (pos < 0) return;
+    oPlaced[pos] = +c.dataset.k; renderOrd();
+  });
+  ordSlots.addEventListener('click', e => {
+    const c = e.target.closest('.ord-card'); if (!c || oChecked) return;
+    const pos = oPlaced.indexOf(+c.dataset.k); oPlaced[pos] = null; renderOrd();
+  });
+  $('#ordCheck').addEventListener('click', () => {
+    if (oChecked || oPlaced.includes(null)) return;
+    oChecked = true;
+    const score = oPlaced.filter((k, pos) => k === pos).length;
+    ordResults[oc] = score;
+    $('#ordScore').textContent = `ได้ ${score}/4`;
+    ordMsg.className = 'toast ' + (score === 4 ? 'good' : 'bad');
+    ordMsg.textContent = score === 4 ? 'ถูกต้องทั้งหมด! รับข้อมูล → ประมวลผล → จัดเก็บ → แสดงผล' : 'ดูบัตรสีแดงว่าควรอยู่ขั้นที่เท่าไร แล้วกด “เริ่มใหม่” เพื่อลองอีกครั้ง';
+    $('#ordNext').hidden = oc === SCEN.length - 1 && ordResults.every(r => r != null);
+    renderScen(); renderOrd();
+  });
+  $('#ordReset').addEventListener('click', () => startScen(oc));
+  $('#ordNext').addEventListener('click', () => { const n = ordResults.findIndex((r, i) => r == null && i !== oc); startScen(n >= 0 ? n : (oc + 1) % SCEN.length); });
+  startScen(0);
+
+})();
+</script>
+
+</body>
+</html>
